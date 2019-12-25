@@ -1,10 +1,3 @@
-"""
--*- coding:utf-8 -*-
-@Time   :2019/11/26 下午1:24
-@Author :wts
-@File   :data.py
-@Version：1.0
-"""
 from os.path import exists, join, basename
 from os import makedirs, remove
 from six.moves import urllib
@@ -29,3 +22,4 @@ def get_eval_set(data_dir, nFrames, upscale_factor, data_augmentation, file_list
 
 def get_test_set(data_dir, nFrames, upscale_factor, file_list, other_dataset, future_frame):
     return DatasetFromFolderTest(data_dir, nFrames, upscale_factor, file_list, other_dataset, future_frame, transform=transform())
+

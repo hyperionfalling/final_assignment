@@ -1,10 +1,3 @@
-"""
--*- coding:utf-8 -*-
-@Time   :2019/11/26 下午1:25
-@Author :wts
-@File   :dataset.py
-@Version：1.0
-"""
 import torch.utils.data as data
 import torch
 import numpy as np
@@ -13,183 +6,232 @@ from os import listdir
 from os.path import join
 from PIL import Image, ImageOps
 import random
+import pyflow
 from skimage import img_as_float
 from random import randrange
-import matplotlib.pyplot as plt
 import os.path
-import cv2
-from torch.utils.data import Dataset
-import random
 
-class MyDataset(Dataset):
-    '''an abstract class representing'''
-    def __init__(self, dataset_type, transform=None, update_dataset=False, frames_n = 3):
-        '''
-        :param dataset_type: ['train','test']
-        :param transform:
-        :param update_dataset:
-        '''
-        dataset_path = '/home/wts/practice/dlpyprac/testmodel/dataset'
-        self.frames_n = frames_n
-        self.frames = frames_n * 2 + 1
+def is_image_file(filename):
+    return any(filename.endswith(extension) for extension in [".png", ".jpg", ".jpeg"])
 
-        if update_dataset:
-            print("update dataset")
-            dbtype_list = os.listdir(dataset_path)
-            #dbtype_list.remove('datalist.txt')
-            for dbtype in dbtype_list:
-                each_path = os.path.join(dataset_path,dbtype)
-                each_list = os.listdir(each_path)
-                f = open(each_path + "/datalist.txt","w")
-                each_list.remove('datalist.txt')
-                for each_db in each_list:
-                    each_sum_name = os.path.join(each_path, each_db)
-                    IG_name = os.listdir(each_sum_name)
-                    img_m_path0 = os.path.join(each_sum_name,IG_name[0])
-                    img_m_path1 = os.path.join(each_sum_name, IG_name[1])
-                    img_name = os.listdir(img_m_path0)
-                    img_name = sorted(img_name)
-                    for img in img_name:
-                        temp = os.path.join(img_m_path0,img)
-                        f.write(temp)
-                        f.write('*')
-                        temp = os.path.join(img_m_path1, img)
-                        f.write(temp)
-                        f.write('\n')
-                f.close()
+def load_img(filepath, nFrames, scale, other_dataset):
+    seq = [i for i in range(1, nFrames)]
+    #random.shuffle(seq) #if random sequence
+    if other_dataset:
+        target = modcrop(Image.open(filepath).convert('RGB'),scale)
+        input=target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+        
+        char_len = len(filepath)
+        neigbor=[]
 
+        for i in seq:
+            index = int(filepath[char_len-7:char_len-4])-i
+            file_name=filepath[0:char_len-7]+'{0:03d}'.format(index)+'.png'
+            
+            if os.path.exists(file_name):
+                temp = modcrop(Image.open(filepath[0:char_len-7]+'{0:03d}'.format(index)+'.png').convert('RGB'),scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+                neigbor.append(temp)
+            else:
+                print('neigbor frame is not exist')
+                temp = input
+                neigbor.append(temp)
+    else:
+        target = modcrop(Image.open(join(filepath,'im'+str(nFrames)+'.png')).convert('RGB'), scale)
+        input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+        neigbor = [modcrop(Image.open(filepath+'/im'+str(j)+'.png').convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC) for j in reversed(seq)]
+    
+    return target, input, neigbor
+
+def load_img_future(filepath, nFrames, scale, other_dataset):
+    tt = int(nFrames/2)
+    if other_dataset:
+        target = modcrop(Image.open(filepath).convert('RGB'),scale)
+        input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+        
+        char_len = len(filepath)
+        neigbor=[]
+        if nFrames%2 == 0:
+            seq = [x for x in range(-tt,tt) if x!=0] # or seq = [x for x in range(-tt+1,tt+1) if x!=0]
+        else:
+            seq = [x for x in range(-tt,tt+1) if x!=0]
+        #random.shuffle(seq) #if random sequence
+        for i in seq:
+            index1 = int(filepath[char_len-7:char_len-4])+i
+            file_name1=filepath[0:char_len-7]+'{0:03d}'.format(index1)+'.png'
+            
+            if os.path.exists(file_name1):
+                temp = modcrop(Image.open(file_name1).convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+                neigbor.append(temp)
+            else:
+                print('neigbor frame- is not exist')
+                temp=input
+                neigbor.append(temp)
+            
+    else:
+        target = modcrop(Image.open(join(filepath,'im4.png')).convert('RGB'),scale)
+        input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+        neigbor = []
+        seq = [x for x in range(4-tt,5+tt) if x!=4]
+        #random.shuffle(seq) #if random sequence
+        for j in seq:
+            neigbor.append(modcrop(Image.open(filepath+'/im'+str(j)+'.png').convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC))
+    return target, input, neigbor
+
+def get_flow(im1, im2):
+    im1 = np.array(im1)
+    im2 = np.array(im2)
+    im1 = im1.astype(float) / 255.
+    im2 = im2.astype(float) / 255.
+    
+    # Flow Options:
+    alpha = 0.012
+    ratio = 0.75
+    minWidth = 20
+    nOuterFPIterations = 7
+    nInnerFPIterations = 1
+    nSORIterations = 30
+    colType = 0  # 0 or default:RGB, 1:GRAY (but pass gray image with shape (h,w,1))
+    
+    u, v, im2W = pyflow.coarse2fine_flow(im1, im2, alpha, ratio, minWidth, nOuterFPIterations, nInnerFPIterations,nSORIterations, colType)
+    flow = np.concatenate((u[..., None], v[..., None]), axis=2)
+    #flow = rescale_flow(flow,0,1)
+    return flow
+
+def rescale_flow(x,max_range,min_range):
+    max_val = np.max(x)
+    min_val = np.min(x)
+    return (max_range-min_range)/(max_val-min_val)*(x-max_val)+max_range
+
+def modcrop(img, modulo):
+    (ih, iw) = img.size
+    ih = ih - (ih%modulo);
+    iw = iw - (iw%modulo);
+    img = img.crop((0, 0, ih, iw))
+    return img
+
+def get_patch(img_in, img_tar, img_nn, patch_size, scale, nFrames, ix=-1, iy=-1):
+    (ih, iw) = img_in.size
+    (th, tw) = (scale * ih, scale * iw)
+
+    patch_mult = scale #if len(scale) > 1 else 1
+    tp = patch_mult * patch_size
+    ip = tp // scale
+
+    if ix == -1:
+        ix = random.randrange(0, iw - ip + 1)
+    if iy == -1:
+        iy = random.randrange(0, ih - ip + 1)
+
+    (tx, ty) = (scale * ix, scale * iy)
+
+    img_in = img_in.crop((iy,ix,iy + ip, ix + ip))#[:, iy:iy + ip, ix:ix + ip]
+    img_tar = img_tar.crop((ty,tx,ty + tp, tx + tp))#[:, ty:ty + tp, tx:tx + tp]
+    img_nn = [j.crop((iy,ix,iy + ip, ix + ip)) for j in img_nn] #[:, iy:iy + ip, ix:ix + ip]
+                
+    info_patch = {
+        'ix': ix, 'iy': iy, 'ip': ip, 'tx': tx, 'ty': ty, 'tp': tp}
+
+    return img_in, img_tar, img_nn, info_patch
+
+def augment(img_in, img_tar, img_nn, flip_h=True, rot=True):
+    info_aug = {'flip_h': False, 'flip_v': False, 'trans': False}
+    
+    if random.random() < 0.5 and flip_h:
+        img_in = ImageOps.flip(img_in)
+        img_tar = ImageOps.flip(img_tar)
+        img_nn = [ImageOps.flip(j) for j in img_nn]
+        info_aug['flip_h'] = True
+
+    if rot:
+        if random.random() < 0.5:
+            img_in = ImageOps.mirror(img_in)
+            img_tar = ImageOps.mirror(img_tar)
+            img_nn = [ImageOps.mirror(j) for j in img_nn]
+            info_aug['flip_v'] = True
+        if random.random() < 0.5:
+            img_in = img_in.rotate(180)
+            img_tar = img_tar.rotate(180)
+            img_nn = [j.rotate(180) for j in img_nn]
+            info_aug['trans'] = True
+
+    return img_in, img_tar, img_nn, info_aug
+    
+def rescale_img(img_in, scale):
+    size_in = img_in.size
+    new_size_in = tuple([int(x * scale) for x in size_in])
+    img_in = img_in.resize(new_size_in, resample=Image.BICUBIC)
+    return img_in
+
+class DatasetFromFolder(data.Dataset):
+    def __init__(self, image_dir,nFrames, upscale_factor, data_augmentation, file_list, other_dataset, patch_size, future_frame, transform=None):
+        super(DatasetFromFolder, self).__init__()
+        alist = [line.rstrip() for line in open(join(image_dir,file_list))]
+        self.image_filenames = [join(image_dir,x) for x in alist]
+        self.nFrames = nFrames
+        self.upscale_factor = upscale_factor
         self.transform = transform
-        self.sample_list = list()
-        self.dataset_type = dataset_type
-        f = open(dataset_path + self.dataset_type + '/datalist.txt')
-        lines = f.readlines()
-        for line in lines:
-            self.sample_list.append(line.strip())
-        f.close()
-
+        self.data_augmentation = data_augmentation
+        self.other_dataset = other_dataset
+        self.patch_size = patch_size
+        self.future_frame = future_frame
 
     def __getitem__(self, index):
-        c_ind = index % 32
-        if(c_ind < self.frames_n):
-            index += self.frames_n
-        elif(c_ind > 31 - self.frames_n):
-            index -= self.frames_n
+        if self.future_frame:
+            target, input, neigbor = load_img_future(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
+        else:
+            target, input, neigbor = load_img(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
 
-        sht = self.sample_list[index]
-        imgs = Image.open(sht.split('*')[-1]).convert('RGB')
-        imgs = np.array(imgs)
-        img_frames = torch.empty((self.frames,3,64,64))
-        label_frames = torch.empty((self.frames,3,256,256))
-        img_bi_frames = torch.empty((self.frames, 3, 256, 256))
-        hi = random.randint(0,(imgs.shape[1]-64))
-        wi = random.randint(0,(imgs.shape[0]-64))
-        hl = 4 * hi
-        wl = 4 * wi
-        t = 0
-        for i in range(index-self.frames_n,index+self.frames_n+1):
-            item = self.sample_list[i]
-            img = Image.open(item.split('*')[-1]).convert('RGB')
-            label = Image.open(item.split('*')[0]).convert('RGB')
-            img = img.crop((hi,wi,hi+64,wi+64))
-            size = img.size
-            new_size = tuple([int (x * 4) for x in size])
-            img_bi = img.resize(new_size, resample=Image.BICUBIC)
-            label = label.crop((hl,wl,hl+256,wl+256))
-            img = np.array(img)
-            label = np.array(label)
-            img_bi = np.array(img_bi)
-            img = np.atleast_3d(img).transpose(2,0,1).astype(np.float32)
-            label = np.atleast_3d(label).transpose(2,0,1).astype(np.float32)
-            img_bi = np.atleast_3d(img_bi).transpose(2,0,1).astype(np.float32)
-            img = torch.from_numpy(img).float()
-            label = torch.from_numpy(label).float()
-            img_bi = torch.from_numpy(img_bi).float()
-            img_frames[t] = img
-            label_frames[t]= label
-            img_bi_frames[t] = img_bi
-            t += 1
-        if self.transform is not None:
-            img = self.transform(img)
-            label = self.transpose(label)
+        if self.patch_size != 0:
+            input, target, neigbor, _ = get_patch(input,target,neigbor,self.patch_size, self.upscale_factor, self.nFrames)
+        
+        if self.data_augmentation:
+            input, target, neigbor, _ = augment(input, target, neigbor)
+            
+        flow = [get_flow(input,j) for j in neigbor]
+            
+        bicubic = rescale_img(input, self.upscale_factor)
+        
+        if self.transform:
+            target = self.transform(target)
+            input = self.transform(input)
+            bicubic = self.transform(bicubic)
+            neigbor = [self.transform(j) for j in neigbor]
+            flow = [torch.from_numpy(j.transpose(2,0,1)) for j in flow]
 
-        img_frames = img_frames.transpose(0,1)
-        label_frames = label_frames.transpose(0,1)
-        img_bi_frames = img_bi_frames.transpose(0,1)
-
-        return img_frames, label_frames, img_bi_frames
-        #return img, label
-
+        return input, target, neigbor, flow, bicubic
 
     def __len__(self):
-        return len(self.sample_list)
+        return len(self.image_filenames)
 
-    def make_txt_file(self, path):
-        return path
+class DatasetFromFolderTest(data.Dataset):
+    def __init__(self, image_dir, nFrames, upscale_factor, file_list, other_dataset, future_frame, transform=None):
+        super(DatasetFromFolderTest, self).__init__()
+        alist = [line.rstrip() for line in open(join(image_dir,file_list))]
+        self.image_filenames = [join(image_dir,x) for x in alist]
+        self.nFrames = nFrames
+        self.upscale_factor = upscale_factor
+        self.transform = transform
+        self.other_dataset = other_dataset
+        self.future_frame = future_frame
 
-if __name__ == '__main__':
-    import torch.nn as nn
-    ds = MyDataset(dataset_type = '/train')
-    img, gt, bic = ds.__getitem__(3)
-    print(img.shape)
-    img1 = img.permute(1,2,3,0)
-    gt1 = gt.permute(1,2,3,0)
-    bic1 = bic.permute(1,2,3,0)
-    img2 = img1.numpy()
-    gt2 = gt1.numpy()
-    bic2 = bic1.numpy()
-    plt.subplot(271)
-    plt.imshow(img2[0].astype(int))
-    plt.subplot(272)
-    plt.imshow(gt2[0].astype(int))
-    plt.subplot(273)
-    plt.imshow(img2[1].astype(int))
-    plt.subplot(274)
-    plt.imshow(gt2[1].astype(int))
-    plt.subplot(275)
-    plt.imshow(img2[2].astype(int))
-    plt.subplot(276)
-    plt.imshow(gt2[2].astype(int))
-    plt.subplot(277)
-    plt.imshow(img2[3].astype(int))
-    plt.subplot(2,7,8)
-    plt.imshow(gt2[3].astype(int))
-    plt.subplot(2,7,9)
-    plt.imshow(img2[4].astype(int))
-    plt.subplot(2,7,10)
-    plt.imshow(gt2[4].astype(int))
-    plt.subplot(2,7,11)
-    plt.imshow(img2[5].astype(int))
-    plt.subplot(2,7,12)
-    plt.imshow(gt2[5].astype(int))
-    plt.subplot(2, 7, 13)
-    plt.imshow(img2[6].astype(int))
-    plt.subplot(2, 7, 14)
-    plt.imshow(gt2[6].astype(int))
+    def __getitem__(self, index):
+        if self.future_frame:
+            target, input, neigbor = load_img_future(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
+        else:
+            target, input, neigbor = load_img(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
+            
+        flow = [get_flow(input,j) for j in neigbor]
 
-    plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        bicubic = rescale_img(input, self.upscale_factor)
+        
+        if self.transform:
+            target = self.transform(target)
+            input = self.transform(input)
+            bicubic = self.transform(bicubic)
+            neigbor = [self.transform(j) for j in neigbor]
+            flow = [torch.from_numpy(j.transpose(2,0,1)) for j in flow]
+            
+        return input, target, neigbor, flow, bicubic
+      
+    def __len__(self):
+        return len(self.image_filenames)

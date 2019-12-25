@@ -1,29 +1,42 @@
-import torch.nn as nn
-import torch
+"""
+-*- coding:utf-8 -*-
+@Time   :2019/12/23 下午7:45
+@Author :wts
+@File   :test.py
+@Version：1.0
+"""
+cpdomains = ["900 google.mail.com", "50 yahoo.com", "1 intel.mail.com", "5 wiki.org"]
+dicts = {}
+for i in cpdomains:
+    t = ""
+    st = ""
+    for j in i:
+        if(j != ' '):
+            t += j
+        else:
+            break
+    print(len(t))
+    print(len(i))
+    for k in range(len(i)-1,len(t)-1,-1):
+        print(i[k])
+        print(k)
+        if(i[k] != '.'):
+            if(i[k] == ' '):
+                if (dicts.get(st) is None):
+                    dicts[st] = int(t)
+                else:
+                    dicts[st] += int(t)
+                break
+            st += i[k]
+        else:
+            if(dicts.get(st) is None):
+                dicts[st] = int(t)
+            else:
+                dicts[st] += int(t)
+            st += i[k]
 
-#("(3,5,5),(1,1,1),(1,1,1)")
-conv3d1 = nn.Conv3d(3, 64, kernel_size=(3,8,8), stride=(1,4,4), padding=(1,2,2))
-#("(3,4,4),(1,2,2),(1,2,2)")
-conv3d2 = nn.ConvTranspose3d(3, 64, kernel_size=(3,3,3), stride=(1,2,2), padding=(1,1,1),output_padding=(0,1,1))
-#反卷积
-conv3d21 = nn.ConvTranspose3d(64, 3, kernel_size=(3,8,8), stride=(1,4,4), padding=(1,2,2),output_padding=(0,0,0))
-#("(3,3,3),(1,1,1),(1,1,1)")
-conv3d3 = nn.Conv3d(3, 64, kernel_size=(3,3,3), stride=1, padding=1)
-#1*1 卷积
-conv3d4 = nn.Conv3d(6, 3, kernel_size=(3,1,1), stride=(1,1,1), padding=(1,0,0))
-
-tempi0 = torch.rand(8,3,7,128,128)
-tempi1 = conv3d1(tempi0)
-tempi2 = conv3d2(tempi0)
-tempi21 = conv3d21(tempi1)
-tempi3 = conv3d3(tempi0)
-#tempi4 = torch.cat((tempi0,tempi21),1)
-#tempi5 = conv3d4(tempi4)
-print(tempi0.shape)
-print(tempi1.shape)
-print(tempi2.shape)
-print(tempi21.shape)
-print(tempi3.shape)
-#print(tempi4.shape)
-#print(tempi5.shape)
-print("---------------------------")
+rs = []
+for k,v in dicts.items():
+    rs.append(str(v) + " " + k[::-1])
+print(rs)
+print(range(2,4)[0])
