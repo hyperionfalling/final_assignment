@@ -17,4 +17,9 @@
 ~~1.引入non-local network（类似于注意力机制）~~
 
 2.加入GAN损失、感知损失
+
+
+## 2.Train & Test
+    python main.py #训练
+    python test.py    #测试
     
